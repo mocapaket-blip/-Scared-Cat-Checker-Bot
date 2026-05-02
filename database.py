@@ -161,6 +161,19 @@ class Database:
             row = await cur.fetchone()
             return UserRow.from_row(row) if row else None
 
+    async def get_user_by_username(self, username: str) -> Optional[UserRow]:
+        """Поиск по username (без @, регистронезависимо)."""
+        clean = username.lstrip("@").strip().lower()
+        if not clean:
+            return None
+        async with await self._conn() as conn:
+            cur = await conn.execute(
+                "SELECT * FROM users WHERE LOWER(username) = ?",
+                (clean,),
+            )
+            row = await cur.fetchone()
+            return UserRow.from_row(row) if row else None
+
     async def set_wallet(self, user_id: int, wallet: str) -> None:
         async with await self._conn() as conn:
             await conn.execute(

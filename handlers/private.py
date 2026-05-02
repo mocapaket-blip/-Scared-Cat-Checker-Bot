@@ -149,11 +149,6 @@ async def cmd_mywallet(message: Message) -> None:
     )
 
 
-@router.message(Command("verify"))
-async def cmd_verify(message: Message, bot: Bot) -> None:
-    await _do_full_check(bot, message)
-
-
 @router.callback_query(F.data == CB_RECHECK)
 async def cb_recheck(call: CallbackQuery, bot: Bot) -> None:
     await call.answer("Запускаю проверку…")

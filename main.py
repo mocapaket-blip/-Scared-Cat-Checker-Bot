@@ -48,13 +48,16 @@ async def setup_bot_commands(bot: Bot) -> None:
         BotCommand(command="start", description="🚀 Начать"),
         BotCommand(command="status", description="📊 Мой статус"),
         BotCommand(command="mywallet", description="👛 Мой кошелёк"),
-        BotCommand(command="verify", description="🔄 Перепроверить"),
     ]
     await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
     admin_commands = user_commands + [
         BotCommand(command="start_verification_existing",
                    description="🔔 Запустить верификацию существующих"),
+        BotCommand(command="fullverify",
+                   description="⚡ Полная проверка всех pending"),
+        BotCommand(command="verify",
+                   description="🔍 Проверить @username"),
         BotCommand(command="admin_stats", description="📈 Статистика"),
         BotCommand(command="admin_help", description="❓ Помощь админа"),
     ]
