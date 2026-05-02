@@ -1,5 +1,8 @@
 """
 Проверка владения подарком в профиле Telegram через Bot API getUserGifts (>= 9.3).
+
+ВАЖНО: поле is_saved (виден ли подарок в профиле) полностью игнорируется —
+нам важен сам факт владения, даже если подарок скрыт.
 """
 import logging
 from typing import Iterable, Optional, Tuple
@@ -24,8 +27,8 @@ def _matches_keywords(text: str, keywords: Iterable[str]) -> bool:
 
 def _gift_matches(gift, keywords: Iterable[str]) -> bool:
     """
-    Поддерживает OwnedGiftUnique (type='unique') и обычные OwnedGiftRegular —
-    нас интересуют только уникальные с нужным именем модели/коллекции.
+    Проверяет OwnedGiftUnique (type='unique') и игнорирует RegularGift.
+    is_saved НЕ проверяется — подарок валиден даже если скрыт.
     """
     gift_type = getattr(gift, "type", None)
     if gift_type != "unique":
@@ -59,7 +62,7 @@ async def user_has_collection_gift(
       • Пользователь должен начать диалог с ботом — иначе getUserGifts вернёт ошибку.
       • Бот должен использовать Bot API >= 9.3 (aiogram 3.13+).
     """
-    keywords = list(keywords or settings.GIFT_KEYWORDS)
+    keywords = list(keywords or settings.gift_keywords_list)
     if not keywords:
         return False, None
 

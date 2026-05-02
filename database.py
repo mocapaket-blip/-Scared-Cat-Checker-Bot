@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
     status         TEXT NOT NULL DEFAULT 'pending',  -- pending | verified | expired | kicked
     method         TEXT,                              -- wallet | gift
     wallet_address TEXT,
+    is_existing    INTEGER NOT NULL DEFAULT 0,       -- 1 = был участником на момент включения проверки
+    is_restricted  INTEGER NOT NULL DEFAULT 0,       -- 1 = бот ограничил права в чате
     joined_at      TEXT NOT NULL,
     deadline_at    TEXT NOT NULL,
     verified_at    TEXT,
@@ -30,6 +32,13 @@ CREATE INDEX IF NOT EXISTS idx_users_deadline ON users(deadline_at);
 """
 
 
+# Миграции: добавляем колонки, если их нет (для обновления старой БД).
+MIGRATIONS = [
+    "ALTER TABLE users ADD COLUMN is_existing INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE users ADD COLUMN is_restricted INTEGER NOT NULL DEFAULT 0",
+]
+
+
 @dataclass
 class UserRow:
     user_id: int
@@ -38,6 +47,8 @@ class UserRow:
     status: str
     method: Optional[str]
     wallet_address: Optional[str]
+    is_existing: bool
+    is_restricted: bool
     joined_at: datetime
     deadline_at: datetime
     verified_at: Optional[datetime]
@@ -54,6 +65,8 @@ class UserRow:
             status=row["status"],
             method=row["method"],
             wallet_address=row["wallet_address"],
+            is_existing=bool(row["is_existing"]) if "is_existing" in row.keys() else False,
+            is_restricted=bool(row["is_restricted"]) if "is_restricted" in row.keys() else False,
             joined_at=_dt(row["joined_at"]),
             deadline_at=_dt(row["deadline_at"]),
             verified_at=_dt(row["verified_at"]),
@@ -73,6 +86,11 @@ class Database:
     async def init(self) -> None:
         async with aiosqlite.connect(self.path) as conn:
             await conn.executescript(SCHEMA)
+            for m in MIGRATIONS:
+                try:
+                    await conn.execute(m)
+                except Exception:
+                    pass  # колонка уже есть
             await conn.commit()
         log.info("Database initialised at %s", self.path)
 
@@ -86,32 +104,51 @@ class Database:
         user_id: int,
         username: Optional[str],
         full_name: Optional[str],
+        is_existing: bool = False,
+        deadline: Optional[datetime] = None,
+        is_restricted: bool = False,
     ) -> UserRow:
         joined = now_utc()
-        deadline = joined + timedelta(days=settings.VERIFICATION_DEADLINE_DAYS)
+        if deadline is None:
+            deadline = joined + timedelta(days=settings.VERIFICATION_DEADLINE_DAYS)
         async with await self._conn() as conn:
             cur = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
             existing = await cur.fetchone()
             if existing is None:
                 await conn.execute(
                     """
-                    INSERT INTO users (user_id, username, full_name, status, joined_at, deadline_at)
-                    VALUES (?, ?, ?, 'pending', ?, ?)
+                    INSERT INTO users
+                        (user_id, username, full_name, status,
+                         is_existing, is_restricted, joined_at, deadline_at)
+                    VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
                     """,
-                    (user_id, username, full_name, joined.isoformat(), deadline.isoformat()),
+                    (
+                        user_id, username, full_name,
+                        int(is_existing), int(is_restricted),
+                        joined.isoformat(), deadline.isoformat(),
+                    ),
                 )
             else:
+                # сохраняем verified, иначе — обновляем
                 await conn.execute(
                     """
                     UPDATE users
                        SET username = ?,
                            full_name = ?,
                            status = CASE WHEN status = 'verified' THEN 'verified' ELSE 'pending' END,
+                           is_existing = CASE WHEN ?=1 THEN 1 ELSE is_existing END,
+                           is_restricted = CASE WHEN status = 'verified' THEN is_restricted ELSE ? END,
                            deadline_at = CASE WHEN status = 'verified' THEN deadline_at ELSE ? END,
                            notified_admin = CASE WHEN status = 'verified' THEN notified_admin ELSE 0 END
                      WHERE user_id = ?
                     """,
-                    (username, full_name, deadline.isoformat(), user_id),
+                    (
+                        username, full_name,
+                        int(is_existing),
+                        int(is_restricted),
+                        deadline.isoformat(),
+                        user_id,
+                    ),
                 )
             await conn.commit()
             cur = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
@@ -132,13 +169,22 @@ class Database:
             )
             await conn.commit()
 
+    async def set_restricted(self, user_id: int, value: bool) -> None:
+        async with await self._conn() as conn:
+            await conn.execute(
+                "UPDATE users SET is_restricted = ? WHERE user_id = ?",
+                (int(value), user_id),
+            )
+            await conn.commit()
+
     async def mark_verified(self, user_id: int, method: str, wallet: Optional[str] = None) -> None:
         async with await self._conn() as conn:
             if wallet:
                 await conn.execute(
                     """
                     UPDATE users
-                       SET status='verified', method=?, wallet_address=?, verified_at=?, last_checked=?
+                       SET status='verified', method=?, wallet_address=?,
+                           verified_at=?, last_checked=?, is_restricted=0
                      WHERE user_id=?
                     """,
                     (method, wallet, now_utc().isoformat(), now_utc().isoformat(), user_id),
@@ -147,7 +193,8 @@ class Database:
                 await conn.execute(
                     """
                     UPDATE users
-                       SET status='verified', method=?, verified_at=?, last_checked=?
+                       SET status='verified', method=?,
+                           verified_at=?, last_checked=?, is_restricted=0
                      WHERE user_id=?
                     """,
                     (method, now_utc().isoformat(), now_utc().isoformat(), user_id),
