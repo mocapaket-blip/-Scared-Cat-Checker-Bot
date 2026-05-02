@@ -27,21 +27,16 @@ class Settings(BaseSettings):
 
     VERIFICATION_DEADLINE_DAYS: int = 7
 
-    GIFT_KEYWORDS: List[str] = Field(default_factory=lambda: ["scared cat", "scaredcat"])
+    GIFT_KEYWORDS: str = "scared cat,scaredcat"
 
     DB_PATH: str = "data/bot.db"
 
     DAILY_CHECK_HOUR_UTC: int = 0
     DAILY_CHECK_MINUTE_UTC: int = 0
 
-    @field_validator("GIFT_KEYWORDS", mode="before")
-    @classmethod
-    def _split_keywords(cls, v):
-        if isinstance(v, str):
-            return [s.strip().lower() for s in v.split(",") if s.strip()]
-        if isinstance(v, list):
-            return [str(s).strip().lower() for s in v if str(s).strip()]
-        return v
+    @property
+    def gift_keywords_list(self) -> List[str]:
+        return [s.strip().lower() for s in self.GIFT_KEYWORDS.split(",") if s.strip()]
 
     @property
     def db_full_path(self) -> Path:

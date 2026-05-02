@@ -1,5 +1,5 @@
 """
-Точка входа для Scared Cats verifier bot.
+Точка входа — Scared Cats verifier bot.
 """
 import asyncio
 import logging
@@ -12,12 +12,11 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from aiogram_tonconnect import (
-    AiogramTonConnectHandlers,
-    AiogramTonConnectMiddleware,
-)
+from aiogram_tonconnect.middleware import AiogramTonConnectMiddleware
+from aiogram_tonconnect.handlers import AiogramTonConnectHandlers
 from aiogram_tonconnect.tonconnect.storage import ATCMemoryStorage
-from aiogram_tonconnect.utils.qrcode import QRUrlProvider
+from aiogram_tonconnect.utils.qrcode import QRImageProvider
+from tonutils.tonconnect import TonConnect
 
 from config import BASE_DIR, settings
 from database import db
@@ -29,7 +28,6 @@ def configure_logging() -> None:
     log_dir = BASE_DIR / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     fmt = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
-
     handlers = [
         logging.StreamHandler(stream=sys.stdout),
         RotatingFileHandler(
@@ -56,14 +54,18 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
+    # TON Connect
+    storage = ATCMemoryStorage()
+    tonconnect = TonConnect(manifest_url=settings.MANIFEST_URL, storage=storage)
+
     atc_middleware = AiogramTonConnectMiddleware(
-        manifest_url=settings.MANIFEST_URL,
-        qrcode_provider=QRUrlProvider(),
-        storage=ATCMemoryStorage(),
+        tonconnect=tonconnect,
+        qrcode_provider=QRImageProvider(),
     )
     dp.update.middleware(atc_middleware)
     AiogramTonConnectHandlers().register(dp)
 
+    # Наши роутеры
     dp.include_router(tc_handlers.router)
     dp.include_router(chat_member.router)
     dp.include_router(private.router)
@@ -76,15 +78,21 @@ async def main() -> None:
     log.info("Group: %s | Admin: %s | Collection: %s",
              settings.GROUP_ID, settings.ADMIN_ID, settings.NFT_COLLECTION_ADDRESS)
 
-    allowed = list(set(dp.resolve_used_update_types() + ["chat_member", "my_chat_member"]))
+    allowed = list(set(
+        dp.resolve_used_update_types() + ["chat_member", "my_chat_member"]
+    ))
     try:
         await dp.start_polling(bot, allowed_updates=allowed)
     finally:
         scheduler.shutdown(wait=False)
+        await tonconnect.close_all_connections()
         await bot.session.close()
 
 
 if __name__ == "__main__":
+    import sys
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
