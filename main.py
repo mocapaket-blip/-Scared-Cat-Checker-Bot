@@ -93,6 +93,10 @@ async def main() -> None:
     dp.update.middleware(atc_middleware)
     AiogramTonConnectHandlers().register(dp)
 
+    # Передаём bot в tonconnect-модуль (нужно для after_wallet_connect callback,
+    # который вызывается вне стандартного middleware-контекста aiogram).
+    tc_handlers.init_bot(bot)
+
     # Наши роутеры. admin ДО private, иначе /start_verification_existing
     # перехватится фильтром private-роутера.
     dp.include_router(tc_handlers.router)

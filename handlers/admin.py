@@ -23,6 +23,7 @@ from aiogram.types import (
 
 from config import BASE_DIR, settings
 from database import db
+from services.gifts import get_user_gifts_debug
 from services.verification import run_full_verification, unrestrict_in_group
 
 router = Router(name="admin")
@@ -265,6 +266,84 @@ async def cmd_admin_verify(
 
 # ──────────────────────────── /admin_help ──────────────────────────────────
 
+@router.message(Command("debug_gifts"))
+async def cmd_debug_gifts(message: Message, command: CommandObject, bot: Bot) -> None:
+    """Диагностика: показывает все подарки пользователя из Bot API."""
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer(
+            "Использование:\n"
+            "<code>/debug_gifts @username</code> или <code>/debug_gifts 123456789</code>"
+        )
+        return
+
+    # Определяем user_id
+    if arg.lstrip("@").isdigit():
+        user_id = int(arg.lstrip("@"))
+        user_row = await db.get_user(user_id)
+    else:
+        user_row = await db.get_user_by_username(arg)
+        user_id = user_row.user_id if user_row else None
+
+    if not user_id:
+        await message.answer(f"❌ Пользователь <code>{arg}</code> не найден в БД.")
+        return
+
+    await message.answer(f"🔍 Запрашиваю подарки для user_id=<code>{user_id}</code>…")
+
+    try:
+        result = await get_user_gifts_debug(bot, user_id)
+    except Exception as e:
+        result = f"💥 Ошибка: <code>{e}</code>"
+
+    db_info = ""
+    if user_row:
+        db_info = (
+            f"\n\n<b>БД:</b> status={user_row.status} "
+            f"wallet=<code>{user_row.wallet_address or '—'}</code>"
+        )
+
+    await message.answer(f"{result}{db_info}")
+
+
+@router.message(Command("debug_wallet"))
+async def cmd_debug_wallet(message: Message, command: CommandObject, bot: Bot) -> None:
+    """Диагностика: проверяет NFT на кошельке пользователя."""
+    from services.ton_api import user_owns_collection_nft, TonApiError
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer(
+            "Использование:\n"
+            "<code>/debug_wallet @username</code> или <code>/debug_wallet EQ...</code>"
+        )
+        return
+
+    # Если передан адрес кошелька напрямую
+    if arg.startswith("EQ") or arg.startswith("UQ") or arg.startswith("0:"):
+        wallet = arg
+    else:
+        user_row = await db.get_user_by_username(arg)
+        if not user_row or not user_row.wallet_address:
+            await message.answer(
+                f"❌ Кошелёк не найден для <code>{arg}</code>.\n"
+                f"Передай адрес кошелька напрямую: <code>/debug_wallet EQ...</code>"
+            )
+            return
+        wallet = user_row.wallet_address
+
+    await message.answer(f"🔍 Проверяю NFT для кошелька:\n<code>{wallet}</code>")
+
+    try:
+        owns = await user_owns_collection_nft(wallet)
+        if owns:
+            await message.answer("✅ NFT из коллекции Scared Cats <b>НАЙДЕНЫ</b> на кошельке.")
+        else:
+            await message.answer("❌ NFT из коллекции Scared Cats <b>НЕ найдены</b> на кошельке.")
+    except TonApiError as e:
+        await message.answer(f"💥 Ошибка tonapi: <code>{e}</code>")
+
+
 @router.message(Command("admin_help"))
 async def cmd_admin_help(message: Message) -> None:
     await message.answer(
@@ -275,6 +354,9 @@ async def cmd_admin_help(message: Message) -> None:
         "всех pending пользователей\n\n"
         "/verify @username — точечная проверка одного пользователя\n\n"
         "/admin_stats — статистика по БД\n\n"
+        "<b>🔧 Диагностика:</b>\n\n"
+        "/debug_gifts @username — показывает все подарки пользователя из Bot API\n\n"
+        "/debug_wallet @username — проверяет NFT на кошельке пользователя\n\n"
         "/admin_help — эта справка"
     )
 

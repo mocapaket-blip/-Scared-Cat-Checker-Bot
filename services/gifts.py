@@ -14,6 +14,9 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
+# Все варианты написания названия коллекции
+_EXTRA_KEYWORDS = ["scared cats", "scaredcats", "scared_cat", "scared_cats"]
+
 
 def _safe_lower(value) -> str:
     return str(value).lower().strip() if value else ""
@@ -28,19 +31,16 @@ def _matches_keywords(text: str, keywords: Iterable[str]) -> bool:
 def _extract_names(gift) -> List[str]:
     """Собирает все текстовые поля подарка для сравнения с ключевыми словами."""
     candidates = []
-
     inner = getattr(gift, "gift", None)
 
     if inner is not None:
         model = getattr(inner, "model", None)
         if model is not None:
             candidates.append(_safe_lower(getattr(model, "name", None)))
-
         candidates.append(_safe_lower(getattr(inner, "name", None)))
         candidates.append(_safe_lower(getattr(inner, "base_name", None)))
         candidates.append(_safe_lower(getattr(inner, "title", None)))
 
-    # Поля напрямую на объекте подарка
     candidates.append(_safe_lower(getattr(gift, "name", None)))
     candidates.append(_safe_lower(getattr(gift, "base_name", None)))
     candidates.append(_safe_lower(getattr(gift, "title", None)))
@@ -48,32 +48,20 @@ def _extract_names(gift) -> List[str]:
     return [c for c in candidates if c]
 
 
+def _gift_type(gift) -> str:
+    return getattr(gift, "type", "unknown")
+
+
 def _gift_matches(gift, keywords: Iterable[str]) -> bool:
     """
-    Проверяет подарок на совпадение с ключевыми словами.
-    Проверяет ОБА типа: unique и regular.
+    Проверяет unique и regular подарки.
     is_saved НЕ проверяется — подарок валиден даже если скрыт.
     """
-    gift_type = getattr(gift, "type", None)
-
-    # Для unique подарков — проверяем все текстовые поля
-    if gift_type == "unique":
-        names = _extract_names(gift)
-        log.debug("Unique gift names: %s", names)
-        return any(_matches_keywords(n, keywords) for n in names)
-
-    # Для regular подарков тоже проверяем на случай нестандартных структур
-    if gift_type == "regular":
-        names = _extract_names(gift)
-        if names:
-            log.debug("Regular gift names: %s", names)
-            return any(_matches_keywords(n, keywords) for n in names)
-
-    return False
+    names = _extract_names(gift)
+    return any(_matches_keywords(n, keywords) for n in names)
 
 
 def _get_display_name(gift) -> str:
-    """Возвращает читаемое имя подарка для отображения пользователю."""
     inner = getattr(gift, "gift", None)
     if inner is not None:
         model = getattr(inner, "model", None)
@@ -87,55 +75,84 @@ def _get_display_name(gift) -> str:
     return getattr(gift, "name", None) or getattr(gift, "base_name", None) or "Scared Cat"
 
 
+async def _fetch_all_gifts(bot: Bot, user_id: int) -> List:
+    """Забирает ВСЕ подарки пользователя с пагинацией."""
+    all_gifts = []
+    offset: Optional[str] = None
+
+    while True:
+        kwargs = {"user_id": user_id, "limit": 100}
+        if offset:
+            kwargs["offset"] = offset
+
+        try:
+            owned = await bot.get_user_gifts(**kwargs)
+        except TelegramBadRequest as e:
+            log.warning("get_user_gifts failed for %s (offset=%s): %s", user_id, offset, e)
+            break
+        except AttributeError:
+            log.error("bot.get_user_gifts отсутствует — нужен aiogram >= 3.13 (Bot API 9.3+)")
+            break
+        except Exception as e:
+            log.warning("Unexpected error in get_user_gifts for %s: %s", user_id, e)
+            break
+
+        batch = getattr(owned, "gifts", None) or []
+        all_gifts.extend(batch)
+        log.debug("Fetched %d gifts (batch), total so far: %d", len(batch), len(all_gifts))
+
+        # Пагинация
+        next_offset = getattr(owned, "next_offset", None)
+        if not next_offset or not batch:
+            break
+        offset = next_offset
+
+    return all_gifts
+
+
 async def user_has_collection_gift(
     bot: Bot,
     user_id: int,
     keywords: Optional[Iterable[str]] = None,
 ) -> Tuple[bool, Optional[str]]:
-    """
-    Возвращает (has_gift, matched_name).
-
-    Требования:
-      • Пользователь должен начать диалог с ботом — иначе getUserGifts вернёт ошибку.
-      • Бот должен использовать Bot API >= 9.3 (aiogram 3.13+).
-    """
-    # Расширенный список ключевых слов для поиска
+    """Возвращает (has_gift, matched_name)."""
     base_keywords = list(keywords or settings.gift_keywords_list)
-    # Добавляем дополнительные вариации на случай разного написания
-    extra = ["scared cats", "scaredcats", "scared_cat", "scared_cats"]
-    all_keywords = list(set(base_keywords + extra))
+    all_keywords = list(set(base_keywords + _EXTRA_KEYWORDS))
 
     if not all_keywords:
         return False, None
 
-    log.debug("Checking gifts for user %s, keywords: %s", user_id, all_keywords)
+    log.info("Checking gifts for user %s, keywords: %s", user_id, all_keywords)
 
-    try:
-        owned = await bot.get_user_gifts(user_id=user_id)
-    except TelegramBadRequest as e:
-        log.warning("get_user_gifts failed for %s: %s", user_id, e)
-        return False, None
-    except AttributeError:
-        log.error(
-            "bot.get_user_gifts отсутствует — нужен aiogram >= 3.13 (Bot API 9.3+)."
-        )
-        return False, None
-    except Exception as e:
-        log.warning("Unexpected error in get_user_gifts for %s: %s", user_id, e)
-        return False, None
-
-    gifts = getattr(owned, "gifts", None) or []
-    log.info("User %s has %d gift(s) total", user_id, len(gifts))
+    gifts = await _fetch_all_gifts(bot, user_id)
+    log.info("User %s total gifts: %d", user_id, len(gifts))
 
     for g in gifts:
-        gift_type = getattr(g, "type", "unknown")
+        gtype = _gift_type(g)
         names = _extract_names(g)
-        log.debug("Gift type=%s names=%s", gift_type, names)
-
+        log.info("  Gift type=%s names=%s", gtype, names)
         if _gift_matches(g, all_keywords):
-            display_name = _get_display_name(g)
-            log.info("Matched gift for user %s: %s", user_id, display_name)
-            return True, display_name
+            display = _get_display_name(g)
+            log.info("  MATCHED: %s", display)
+            return True, display
 
     log.info("No matching gift found for user %s", user_id)
     return False, None
+
+
+async def get_user_gifts_debug(bot: Bot, user_id: int) -> str:
+    """
+    Возвращает человекочитаемый список всех подарков пользователя.
+    Используется в /debug_gifts для диагностики.
+    """
+    gifts = await _fetch_all_gifts(bot, user_id)
+    if not gifts:
+        return "Подарков нет (или API вернул пустой список)"
+
+    lines = [f"Всего подарков: <b>{len(gifts)}</b>\n"]
+    for i, g in enumerate(gifts, 1):
+        gtype = _gift_type(g)
+        names = _extract_names(g)
+        lines.append(f"{i}. type=<code>{gtype}</code> names=<code>{names}</code>")
+
+    return "\n".join(lines)
