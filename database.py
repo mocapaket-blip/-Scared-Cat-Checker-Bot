@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -85,6 +86,7 @@ class Database:
 
     async def init(self) -> None:
         async with aiosqlite.connect(self.path) as conn:
+            conn.row_factory = aiosqlite.Row
             await conn.executescript(SCHEMA)
             for m in MIGRATIONS:
                 try:
@@ -94,10 +96,12 @@ class Database:
             await conn.commit()
         log.info("Database initialised at %s", self.path)
 
-    async def _conn(self) -> aiosqlite.Connection:
-        conn = await aiosqlite.connect(self.path)
-        conn.row_factory = aiosqlite.Row
-        return conn
+    @asynccontextmanager
+    async def _conn(self):
+        """Async context manager: открывает соединение, выставляет row_factory, закрывает."""
+        async with aiosqlite.connect(self.path) as conn:
+            conn.row_factory = aiosqlite.Row
+            yield conn
 
     async def upsert_pending_user(
         self,
@@ -111,7 +115,7 @@ class Database:
         joined = now_utc()
         if deadline is None:
             deadline = joined + timedelta(days=settings.VERIFICATION_DEADLINE_DAYS)
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             cur = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
             existing = await cur.fetchone()
             if existing is None:
@@ -156,7 +160,7 @@ class Database:
             return UserRow.from_row(row)
 
     async def get_user(self, user_id: int) -> Optional[UserRow]:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             cur = await conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
             row = await cur.fetchone()
             return UserRow.from_row(row) if row else None
@@ -166,7 +170,7 @@ class Database:
         clean = username.lstrip("@").strip().lower()
         if not clean:
             return None
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             cur = await conn.execute(
                 "SELECT * FROM users WHERE LOWER(username) = ?",
                 (clean,),
@@ -175,7 +179,7 @@ class Database:
             return UserRow.from_row(row) if row else None
 
     async def set_wallet(self, user_id: int, wallet: str) -> None:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             await conn.execute(
                 "UPDATE users SET wallet_address = ? WHERE user_id = ?",
                 (wallet, user_id),
@@ -183,7 +187,7 @@ class Database:
             await conn.commit()
 
     async def set_restricted(self, user_id: int, value: bool) -> None:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             await conn.execute(
                 "UPDATE users SET is_restricted = ? WHERE user_id = ?",
                 (int(value), user_id),
@@ -191,7 +195,7 @@ class Database:
             await conn.commit()
 
     async def mark_verified(self, user_id: int, method: str, wallet: Optional[str] = None) -> None:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             if wallet:
                 await conn.execute(
                     """
@@ -215,7 +219,7 @@ class Database:
             await conn.commit()
 
     async def touch_checked(self, user_id: int) -> None:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             await conn.execute(
                 "UPDATE users SET last_checked=? WHERE user_id=?",
                 (now_utc().isoformat(), user_id),
@@ -223,7 +227,7 @@ class Database:
             await conn.commit()
 
     async def mark_expired(self, user_id: int) -> None:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             await conn.execute(
                 "UPDATE users SET status='expired', notified_admin=1 WHERE user_id=?",
                 (user_id,),
@@ -231,7 +235,7 @@ class Database:
             await conn.commit()
 
     async def mark_kicked(self, user_id: int) -> None:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             await conn.execute(
                 "UPDATE users SET status='kicked' WHERE user_id=?",
                 (user_id,),
@@ -239,7 +243,7 @@ class Database:
             await conn.commit()
 
     async def list_pending(self) -> List[UserRow]:
-        async with await self._conn() as conn:
+        async with self._conn() as conn:
             cur = await conn.execute(
                 "SELECT * FROM users WHERE status='pending' ORDER BY deadline_at ASC"
             )
