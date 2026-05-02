@@ -5,20 +5,27 @@
   • /start verify_existing  — для уже состоящих участников
 """
 import logging
+import re
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from config import settings
 from database import db
 from keyboards.inline import (
+    CB_CANCEL,
     CB_CHECK_GIFTS,
     CB_DISCONNECT_WALLET,
+    CB_MANUAL_WALLET,
     CB_RECHECK,
+    cancel_menu,
     recheck_menu,
     verification_menu,
 )
+from services.ton_api import TonApiError, user_owns_collection_nft
 from services.verification import (
     run_full_verification,
     unrestrict_in_group,
@@ -30,6 +37,23 @@ router.message.filter(F.chat.type == "private")
 router.callback_query.filter(F.message.chat.type == "private")
 
 log = logging.getLogger(__name__)
+
+
+class WalletInput(StatesGroup):
+    """FSM-state для ручного ввода адреса кошелька."""
+    waiting_address = State()
+
+
+# Базовая валидация TON-адреса:
+# • EQ... / UQ... — user-friendly base64 (48 символов)
+# • 0:... — raw hex
+TON_ADDRESS_RE = re.compile(
+    r"^("
+    r"(?:EQ|UQ|kQ|0Q)[A-Za-z0-9_\-]{46}"   # user-friendly
+    r"|"
+    r"-?\d:[A-Fa-f0-9]{64}"                 # raw
+    r")$"
+)
 
 
 def _full_name(u) -> str:
@@ -64,13 +88,14 @@ def _format_status(user) -> str:
     )
 
 
+# ──────────────────────────── /start ─────────────────────────────────────────
+
 @router.message(CommandStart(deep_link=True))
 async def cmd_start_deeplink(message: Message, command: CommandObject, bot: Bot) -> None:
     payload = (command.args or "").strip().lower()
     user = message.from_user
 
     if payload == "verify_existing":
-        # Регистрируем как existing с фиксированным дедлайном
         await db.upsert_pending_user(
             user_id=user.id,
             username=user.username,
@@ -90,10 +115,8 @@ async def cmd_start_deeplink(message: Message, command: CommandObject, bot: Bot)
         )
         return
 
-    # payload == "verify" или любой другой — стандартный путь для новых участников
     user_row = await db.get_user(user.id)
     if user_row is None:
-        # Если deep link verify, но в БД ещё нет — создадим pending
         await db.upsert_pending_user(
             user_id=user.id,
             username=user.username,
@@ -109,7 +132,8 @@ async def cmd_start_deeplink(message: Message, command: CommandObject, bot: Bot)
 
 
 @router.message(CommandStart())
-async def cmd_start_plain(message: Message) -> None:
+async def cmd_start_plain(message: Message, state: FSMContext) -> None:
+    await state.clear()  # Сбрасываем любые висящие FSM-состояния
     user = message.from_user
     user_row = await db.get_user(user.id)
 
@@ -149,6 +173,90 @@ async def cmd_mywallet(message: Message) -> None:
     )
 
 
+# ─────────────────────── ручной ввод кошелька ────────────────────────────────
+
+@router.callback_query(F.data == CB_MANUAL_WALLET)
+async def cb_manual_wallet(call: CallbackQuery, state: FSMContext) -> None:
+    """Запускает FSM-flow для ручного ввода адреса кошелька."""
+    await call.answer()
+    await state.set_state(WalletInput.waiting_address)
+    await call.message.answer(
+        "✍️ <b>Введи адрес TON-кошелька</b>\n\n"
+        "Отправь сообщением адрес в формате:\n"
+        "<code>EQ...</code> или <code>UQ...</code>\n\n"
+        "Пример:\n"
+        "<code>EQAbC1d2eF3gH4iJ5kL6mN7oP8qR9sT0uV1wX2yZ3aB4cD5</code>\n\n"
+        "Адрес можно скопировать из своего TON-кошелька (Tonkeeper, MyTonWallet и др.).",
+        reply_markup=cancel_menu(),
+    )
+
+
+@router.callback_query(F.data == CB_CANCEL)
+async def cb_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await call.answer("Отменено")
+    await call.message.answer(
+        "Отменено. Выбери способ верификации:",
+        reply_markup=verification_menu(),
+    )
+
+
+@router.message(WalletInput.waiting_address)
+async def on_wallet_address(message: Message, state: FSMContext, bot: Bot) -> None:
+    """Обработчик ручного ввода адреса кошелька."""
+    raw = (message.text or "").strip()
+
+    if not TON_ADDRESS_RE.match(raw):
+        await message.answer(
+            "❌ Это не похоже на TON-адрес.\n\n"
+            "Адрес должен начинаться с <code>EQ</code>, <code>UQ</code>, "
+            "<code>kQ</code> или <code>0Q</code> и быть длиной 48 символов.\n\n"
+            "Попробуй ещё раз или нажми отмену.",
+            reply_markup=cancel_menu(),
+        )
+        return
+
+    await state.clear()
+
+    # Сохраняем адрес и проверяем NFT
+    user_id = message.from_user.id
+    await db.set_wallet(user_id, raw)
+
+    progress = await message.answer(
+        f"🔍 Проверяю кошелёк:\n<code>{raw}</code>\n\nПодожди…"
+    )
+
+    try:
+        owns = await user_owns_collection_nft(raw)
+    except TonApiError as e:
+        await progress.edit_text(
+            f"💥 Ошибка проверки через tonapi:\n<code>{e}</code>\n\n"
+            f"Попробуй позже.",
+            reply_markup=recheck_menu(has_wallet=True),
+        )
+        return
+
+    if owns:
+        await db.mark_verified(user_id, "wallet", wallet=raw)
+        await unrestrict_in_group(bot, user_id)
+        await progress.edit_text(
+            f"✅ <b>Верификация пройдена!</b>\n\n"
+            f"Кошелёк: <code>{raw}</code>\n\n"
+            f"NFT из коллекции Scared Cats найдены. "
+            f"Права в группе восстановлены — можешь писать! 🎉"
+        )
+    else:
+        user = await db.get_user(user_id)
+        await progress.edit_text(
+            f"⚠️ Кошелёк сохранён:\n<code>{raw}</code>\n\n"
+            f"Но NFT из коллекции Scared Cats на нём <b>не найдены</b>.\n\n"
+            f"Можно ввести другой адрес или проверить подарки.",
+            reply_markup=recheck_menu(has_wallet=True),
+        )
+
+
+# ──────────────────────────── callbacks ──────────────────────────────────────
+
 @router.callback_query(F.data == CB_RECHECK)
 async def cb_recheck(call: CallbackQuery, bot: Bot) -> None:
     await call.answer("Запускаю проверку…")
@@ -158,7 +266,17 @@ async def cb_recheck(call: CallbackQuery, bot: Bot) -> None:
 @router.callback_query(F.data == CB_CHECK_GIFTS)
 async def cb_check_gifts(call: CallbackQuery, bot: Bot) -> None:
     await call.answer("Проверяю подарки…")
-    result = await verify_by_gift(bot, call.from_user.id)
+    try:
+        result = await verify_by_gift(bot, call.from_user.id)
+    except Exception as e:
+        log.exception("verify_by_gift crashed for %s: %s", call.from_user.id, e)
+        await call.message.answer(
+            f"💥 Ошибка при проверке подарков: <code>{e}</code>\n\n"
+            f"Попробуй позже или подключи кошелёк.",
+            reply_markup=verification_menu(),
+        )
+        return
+
     if result.ok:
         await db.mark_verified(call.from_user.id, "gift")
         await unrestrict_in_group(bot, call.from_user.id)
@@ -169,9 +287,14 @@ async def cb_check_gifts(call: CallbackQuery, bot: Bot) -> None:
     else:
         user = await db.get_user(call.from_user.id)
         await call.message.answer(
-            "❌ Подарок Scared Cat в профиле не найден.\n"
-            "Если он у тебя есть — попробуй снова. "
-            "Либо подключи TON-кошелёк.",
+            "❌ Подарок Scared Cat в профиле не найден.\n\n"
+            "Возможные причины:\n"
+            "• У тебя действительно нет такого подарка\n"
+            "• Подарок есть в другом аккаунте\n"
+            "• В настройках Telegram запрещён доступ к подаркам "
+            "(Настройки → Конфиденциальность → Подарки и Stars → "
+            "«Кто видит мои подарки» = «Все»)\n\n"
+            "Попробуй ещё раз или подключи TON-кошелёк.",
             reply_markup=recheck_menu(has_wallet=bool(user and user.wallet_address)),
         )
 

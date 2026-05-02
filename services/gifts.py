@@ -14,8 +14,16 @@ from config import settings
 
 log = logging.getLogger(__name__)
 
-# Все варианты написания названия коллекции
-_EXTRA_KEYWORDS = ["scared cats", "scaredcats", "scared_cat", "scared_cats"]
+# Все варианты написания названия коллекции.
+# Реальный формат подарка из t.me/nft/ScaredCat-XXXX → name='ScaredCat-XXXX'.
+# В lowercase это 'scaredcat-XXXX', где 'scaredcat' уверенно матчится.
+_EXTRA_KEYWORDS = [
+    "scaredcat",          # покрывает 'scaredcat-13063'
+    "scared cat",         # purely human-readable base_name
+    "scared cats",
+    "scaredcats",
+    "scared_cat",
+]
 
 
 def _safe_lower(value) -> str:
