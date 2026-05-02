@@ -11,7 +11,7 @@ from aiogram_tonconnect.tonconnect.models import ConnectWalletCallbacks
 
 from database import db
 from keyboards.inline import CB_CONNECT_WALLET, CB_DISCONNECT_WALLET, recheck_menu
-from services.verification import verify_by_wallet
+from services.verification import unrestrict_in_group, verify_by_wallet
 
 router = Router(name="tonconnect")
 log = logging.getLogger(__name__)
@@ -40,28 +40,27 @@ async def cb_disconnect_wallet(call: CallbackQuery, atc_manager: ATCManager) -> 
 
 
 async def before_wallet_connect(**data) -> None:
-    log.info("before_wallet_connect: user=%s", data.get("atc_manager", {}) and
-             getattr(data.get("atc_manager"), "user", {}) and
-             getattr(getattr(data.get("atc_manager"), "user", None), "id", "?"))
+    pass
 
 
 async def after_wallet_connect(**data) -> None:
     """
     Вызывается после успешного подключения кошелька.
-    atc_manager.user.wallet_address — объект Address из pytoniq_core.
+    Сохраняет адрес, проверяет NFT, снимает restrict если верифицирован.
     """
     atc_manager: ATCManager = data["atc_manager"]
-    bot: Bot = data.get("bot")
+
+    # Получаем bot из data или из atc_manager
+    bot: Bot = data.get("bot") or getattr(atc_manager, "bot", None)
 
     user_id = atc_manager.user.id
 
-    # Получаем адрес кошелька в удобочитаемом виде
+    # Получаем адрес кошелька
     wallet_address_obj = atc_manager.user.wallet_address
     if wallet_address_obj is None:
         log.error("Wallet connected but address is None for user %s", user_id)
         return
 
-    # Конвертируем Address в строку (bounceable формат)
     try:
         address_str = wallet_address_obj.to_str(is_user_friendly=True, is_bounceable=False)
     except Exception:
@@ -77,23 +76,34 @@ async def after_wallet_connect(**data) -> None:
 
     if result.ok:
         await db.mark_verified(user_id, "wallet", wallet=address_str)
+
+        # ✅ СНИМАЕМ RESTRICT В ГРУППЕ
+        if bot:
+            await unrestrict_in_group(bot, user_id)
+
         text = (
-            f"✅ Кошелёк подключён!\n"
+            f"✅ <b>Кошелёк подключён и верификация пройдена!</b>\n\n"
             f"<code>{address_str}</code>\n\n"
-            f"NFT из коллекции Scared Cats найдены.\n"
-            f"<b>Ты верифицирован!</b> 🎉"
+            f"NFT из коллекции Scared Cats найдены. "
+            f"Ты верифицирован — теперь можешь писать в группе! 🎉"
         )
+
     elif result.error == "no_nft":
         text = (
-            f"⚠️ Кошелёк подключён:\n<code>{address_str}</code>\n\n"
-            f"Но NFT из коллекции Scared Cats на нём не найдены.\n"
-            f"Можно подключить другой кошелёк или проверить подарки."
+            f"⚠️ <b>Кошелёк подключён:</b>\n"
+            f"<code>{address_str}</code>\n\n"
+            f"Но NFT из коллекции Scared Cats на нём <b>не найдены</b>.\n\n"
+            f"Что можно сделать:\n"
+            f"• Подключить другой кошелёк\n"
+            f"• Проверить подарки Telegram"
         )
+
     else:
         text = (
-            f"⚠️ Кошелёк подключён:\n<code>{address_str}</code>\n\n"
+            f"⚠️ <b>Кошелёк подключён:</b>\n"
+            f"<code>{address_str}</code>\n\n"
             f"Не удалось проверить NFT: <code>{result.error}</code>\n"
-            f"Попробуй позже — /verify"
+            f"Попробуй нажать «Запустить проверку» ещё раз."
         )
 
     if bot:
@@ -105,3 +115,5 @@ async def after_wallet_connect(**data) -> None:
             )
         except Exception as e:
             log.warning("Cannot DM user %s after connect: %s", user_id, e)
+    else:
+        log.error("bot is None in after_wallet_connect for user %s — cannot send DM", user_id)
