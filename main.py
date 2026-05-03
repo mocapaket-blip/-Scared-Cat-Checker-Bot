@@ -1,5 +1,7 @@
 """
 Точка входа — Scared Cats verifier bot.
+Верификация идёт через Telegram Mini App (app.html на GitHub Pages),
+поэтому aiogram-tonconnect больше не используется.
 """
 import asyncio
 import logging
@@ -12,15 +14,9 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
-from aiogram_tonconnect.middleware import AiogramTonConnectMiddleware
-from aiogram_tonconnect.handlers import AiogramTonConnectHandlers
-from aiogram_tonconnect.tonconnect.storage import ATCMemoryStorage
-from aiogram_tonconnect.utils.qrcode import QRImageProvider
-from tonutils.tonconnect import TonConnect
-
 from config import BASE_DIR, settings
 from database import db
-from handlers import admin, chat_member, private, tonconnect as tc_handlers
+from handlers import admin, chat_member, private
 from scheduler import setup_scheduler
 
 
@@ -59,6 +55,8 @@ async def setup_bot_commands(bot: Bot) -> None:
         BotCommand(command="verify",
                    description="🔍 Проверить @username"),
         BotCommand(command="admin_stats", description="📈 Статистика"),
+        BotCommand(command="debug_gifts", description="🔧 Debug подарков"),
+        BotCommand(command="debug_wallet", description="🔧 Debug кошелька"),
         BotCommand(command="admin_help", description="❓ Помощь админа"),
     ]
     try:
@@ -82,24 +80,8 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
-    # TON Connect
-    storage = ATCMemoryStorage()
-    tonconnect = TonConnect(manifest_url=settings.MANIFEST_URL, storage=storage)
-
-    atc_middleware = AiogramTonConnectMiddleware(
-        tonconnect=tonconnect,
-        qrcode_provider=QRImageProvider(),
-    )
-    dp.update.middleware(atc_middleware)
-    AiogramTonConnectHandlers().register(dp)
-
-    # Передаём bot в tonconnect-модуль (нужно для after_wallet_connect callback,
-    # который вызывается вне стандартного middleware-контекста aiogram).
-    tc_handlers.init_bot(bot)
-
-    # Наши роутеры. admin ДО private, иначе /start_verification_existing
+    # Роутеры. admin ДО private, иначе /start_verification_existing
     # перехватится фильтром private-роутера.
-    dp.include_router(tc_handlers.router)
     dp.include_router(admin.router)
     dp.include_router(chat_member.router)
     dp.include_router(private.router)
@@ -125,10 +107,6 @@ async def main() -> None:
         await dp.start_polling(bot, allowed_updates=allowed)
     finally:
         scheduler.shutdown(wait=False)
-        try:
-            await tonconnect.close_all_connections()
-        except Exception:
-            pass
         await bot.session.close()
 
 
