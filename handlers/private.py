@@ -112,13 +112,14 @@ async def cmd_start_plain(message: Message, state: FSMContext) -> None:
 
     if user_row is None:
         await message.answer(
-            "Привет! Я слежу за участниками закрытой группы Scared Cats.\n\n"
-            "Если ты вошёл в группу — нажми кнопку «Верифицироваться сейчас» в группе."
+            f"👋 Привет, <b>{_full_name(user)}</b>!\n\n"
+            f"Нажми кнопку, чтобы пройти верификацию:",
+            reply_markup=verification_menu(),
         )
         return
 
     await message.answer(
-        f"С возвращением!\n\n{_format_status(user_row)}\n\n"
+        f"С возвращением, <b>{_full_name(user)}</b>!\n\n{_format_status(user_row)}\n\n"
         f"Нажми кнопку для верификации:",
         reply_markup=verification_menu(),
     )
