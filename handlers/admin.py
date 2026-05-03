@@ -14,15 +14,11 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command, CommandObject
-from aiogram.types import (
-    FSInputFile,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+from aiogram.types import FSInputFile, Message
 
 from config import BASE_DIR, settings
 from database import db
+from keyboards.inline import group_existing_button
 from services.gifts import get_user_gifts_debug
 from services.verification import run_full_verification, unrestrict_in_group
 
@@ -50,14 +46,7 @@ VIDEO_FILENAME = "scared_cat_checker_video.mp4"
 async def cmd_start_verification_existing(message: Message, bot: Bot) -> None:
     """Публикует и закрепляет видео-объявление в группе."""
     me = await bot.get_me()
-    deep_link = f"https://t.me/{me.username}?start=verify_existing"
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="🔑 Верифицироваться сейчас",
-            url=deep_link,
-        )
-    ]])
+    kb = group_existing_button(me.username)
 
     video_path = BASE_DIR / VIDEO_FILENAME
     sent = None

@@ -12,12 +12,11 @@ from aiogram.filters import ChatMemberUpdatedFilter, JOIN_TRANSITION
 from aiogram.types import (
     ChatMemberUpdated,
     ChatPermissions,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
 )
 
 from config import settings
 from database import db
+from keyboards.inline import group_verify_button
 
 router = Router(name="chat_member")
 log = logging.getLogger(__name__)
@@ -84,11 +83,7 @@ async def on_user_joined(event: ChatMemberUpdated, bot: Bot) -> None:
 
     # 3) Сообщение в группу с кнопкой
     me = await bot.get_me()
-    deep_link = f"https://t.me/{me.username}?start=verify"
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🔑 Верифицироваться сейчас", url=deep_link)
-    ]])
+    kb = group_verify_button(me.username)
 
     mention = f'<a href="tg://user?id={user.id}">{_full_name(user)}</a>'
     note = "" if restricted_ok else (

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Scared Cats — Верификация</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        var(--tg-theme-bg-color, #1c1c1e);
+      --text:      var(--tg-theme-text-color, #ffffff);
+      --hint:      var(--tg-theme-hint-color, #8e8e93);
+      --btn:       var(--tg-theme-button-color, #5288c1);
+      --btn-text:  var(--tg-theme-button-text-color, #ffffff);
+      --sec-bg:    var(--tg-theme-secondary-bg-color, #2c2c2e);
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      overscroll-behavior: none;
+    }
+
+    .page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px 24px;
+      gap: 0;
+    }
+
+    .logo { font-size: 72px; line-height: 1; margin-bottom: 16px; }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--hint);
+      text-align: center;
+      line-height: 1.5;
+      margin-bottom: 36px;
+      max-width: 280px;
+    }
+
+    .btn {
+      width: 100%;
+      max-width: 320px;
+      padding: 15px 20px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: opacity 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active { opacity: 0.75; transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-gift {
+      background: var(--btn);
+      color: var(--btn-text);
+      margin-bottom: 12px;
+    }
+
+    .btn-wallet {
+      background: var(--sec-bg);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .divider {
+      font-size: 12px;
+      color: var(--hint);
+      margin: 4px 0 12px;
+      width: 100%;
+      max-width: 320px;
+      text-align: center;
+    }
+
+    .status {
+      display: none;
+      width: 100%;
+      max-width: 320px;
+      margin-top: 20px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .status.show { display: block; }
+    .status.info    { background: rgba(0,122,255,0.15);  color: #409cff; }
+    .status.success { background: rgba(52,199,89,0.15);  color: #34c759; }
+    .status.error   { background: rgba(255,59,48,0.15);  color: #ff453a; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="logo">😱🐱</div>
+  <h1>Scared Cats</h1>
+  <p class="subtitle">Подтверди владение NFT или подарком,<br>чтобы получить доступ к чату</p>
+
+  <button class="btn btn-gift" id="gift-btn">
+    🎁 Проверить подарок Telegram
+  </button>
+
+  <div class="divider">или</div>
+
+  <button class="btn btn-wallet" id="wallet-btn">
+    🔗 Подключить TON-кошелёк
+  </button>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script type="module">
+  // ─── Telegram WebApp ───────────────────────────────────────────
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  const MANIFEST = 'https://mocapaket-blip.github.io/-Scared-Cat-Checker-Bot/tonconnect-manifest.json';
+
+  // ─── UI helpers ───────────────────────────────────────────────
+  function setStatus(msg, type = 'info') {
+    const el = document.getElementById('status');
+    el.innerHTML = msg;
+    el.className = 'status show ' + type;
+  }
+
+  function setBtnsDisabled(val) {
+    document.getElementById('gift-btn').disabled = val;
+    document.getElementById('wallet-btn').disabled = val;
+  }
+
+  // ─── Gift button ──────────────────────────────────────────────
+  document.getElementById('gift-btn').addEventListener('click', () => {
+    tg.HapticFeedback.impactOccurred('medium');
+    setStatus('<span class="spinner"></span>&nbsp; Отправляю запрос боту…', 'info');
+    setBtnsDisabled(true);
+    setTimeout(() => {
+      try {
+        tg.sendData(JSON.stringify({ action: 'check_gift' }));
+      } catch (e) {
+        setStatus('Ошибка: ' + e.message, 'error');
+        setBtnsDisabled(false);
+      }
+    }, 300);
+  });
+
+  // ─── Wallet button via TON Connect ────────────────────────────
+  let tcUI = null;
+  let prevWallet = null;   // для определения НОВЫХ подключений
+
+  async function initTonConnect() {
+    try {
+      const { TonConnectUI } = await import(
+        'https://unpkg.com/@tonconnect/ui@2.0.9/dist/tonconnect-ui.esm.js'
+      );
+
+      tcUI = new TonConnectUI({
+        manifestUrl: MANIFEST,
+        // Без buttonRootId — не создаём стандартную кнопку, управляем сами
+      });
+
+      // Фиксируем текущее состояние (может быть уже подключён с прошлого раза)
+      prevWallet = tcUI.wallet;
+
+      // Слушаем изменения статуса
+      tcUI.onStatusChange(wallet => {
+        if (wallet && !prevWallet) {
+          // Новое подключение — отправляем данные боту
+          const address = wallet.account.address;
+          tg.HapticFeedback.notificationOccurred('success');
+          setStatus('✅ Кошелёк подключён! Проверяю NFT…', 'success');
+          setTimeout(() => {
+            try {
+              tg.sendData(JSON.stringify({ action: 'wallet', address }));
+            } catch (e) {
+              setStatus('Ошибка отправки: ' + e.message, 'error');
+              setBtnsDisabled(false);
+            }
+          }, 600);
+        }
+        prevWallet = wallet;
+      });
+
+    } catch (e) {
+      console.error('TonConnect init error:', e);
+    }
+  }
+
+  // Инициализируем TonConnect при загрузке
+  initTonConnect();
+
+  document.getElementById('wallet-btn').addEventListener('click', async () => {
+    tg.HapticFeedback.impactOccurred('medium');
+
+    if (!tcUI) {
+      setStatus('TON Connect ещё загружается, подожди секунду…', 'info');
+      return;
+    }
+
+    // Если кошелёк уже подключён — сразу отправляем данные
+    if (tcUI.wallet) {
+      const address = tcUI.wallet.account.address;
+      setStatus('<span class="spinner"></span>&nbsp; Проверяю NFT…', 'info');
+      setBtnsDisabled(true);
+      setTimeout(() => {
+        tg.sendData(JSON.stringify({ action: 'wallet', address }));
+      }, 300);
+      return;
+    }
+
+    setStatus('<span class="spinner"></span>&nbsp; Открываю список кошельков…', 'info');
+    setBtnsDisabled(true);
+
+    try {
+      await tcUI.openModal();
+      // Дальше onStatusChange поймает подключение
+    } catch (e) {
+      setStatus('Не удалось открыть TON Connect: ' + e.message, 'error');
+      setBtnsDisabled(false);
+    }
+  });
+</script>
+</body>
+</html>
