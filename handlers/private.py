@@ -17,7 +17,6 @@ from aiogram.types import CallbackQuery, Message
 from config import settings
 from database import db
 from keyboards.inline import (
-    CB_CHECK_GIFT,
     CB_DISCONNECT_WALLET,
     CB_RECHECK,
     recheck_menu,
@@ -254,46 +253,6 @@ async def on_web_app_data(message: Message, bot: Bot) -> None:
 
 
 # ────────────────────── callback buttons ─────────────────────────
-
-@router.callback_query(F.data == CB_CHECK_GIFT)
-async def cb_check_gift(call: CallbackQuery, bot: Bot) -> None:
-    """Прямая проверка подарка из бота — без Mini App."""
-    await call.answer("Проверяю подарки…")
-    user_id = call.from_user.id
-
-    msg = await call.message.answer("🔍 Проверяю подарки в твоём профиле…")
-    try:
-        result = await verify_by_gift(bot, user_id)
-    except Exception as e:
-        log.exception("verify_by_gift error for %s: %s", user_id, e)
-        await msg.edit_text(
-            f"💥 Ошибка при проверке подарков: <code>{e}</code>\n\n"
-            "Попробуй снова или подключи кошелёк.",
-            reply_markup=verification_menu(),
-        )
-        return
-
-    if result.ok:
-        await db.mark_verified(user_id, "gift")
-        await unrestrict_in_group(bot, user_id)
-        await msg.edit_text(
-            f"✅ <b>Верификация пройдена!</b>\n\n"
-            f"Найден подарок «{result.detail}».\n"
-            f"Права в группе восстановлены — можешь писать! 🎉"
-        )
-    else:
-        user = await db.get_user(user_id)
-        await msg.edit_text(
-            "❌ <b>Подарок Scared Cat не найден.</b>\n\n"
-            "Возможные причины:\n"
-            "• У тебя нет подарка Scared Cat в этом аккаунте\n"
-            "• Настройки приватности скрывают подарки от ботов:\n"
-            "  <i>Настройки → Конфиденциальность → Подарки и Stars\n"
-            "  → «Кто видит мои подарки» = Все</i>\n\n"
-            "Попробуй подключить TON-кошелёк.",
-            reply_markup=recheck_menu(has_wallet=bool(user and user.wallet_address)),
-        )
-
 
 @router.callback_query(F.data == CB_RECHECK)
 async def cb_recheck(call: CallbackQuery, bot: Bot) -> None:

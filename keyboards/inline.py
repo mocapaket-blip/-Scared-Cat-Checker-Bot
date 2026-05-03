@@ -5,21 +5,18 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 WEBAPP_URL = "https://mocapaket-blip.github.io/-Scared-Cat-Checker-Bot/app.html"
 
 # Callback constants
-CB_CHECK_GIFT        = "verify:check_gift"
 CB_RECHECK           = "verify:recheck"
 CB_DISCONNECT_WALLET = "verify:disconnect_wallet"
 
 
 def verification_menu() -> InlineKeyboardMarkup:
     """
-    Главное меню верификации.
-      • Подарок проверяется прямо в боте (без Mini App).
-      • Кошелёк подключается через Mini App (TON Connect в браузере).
+    Главное меню верификации — одна кнопка, открывающая Mini App.
+    Внутри Mini App пользователь выбирает: TON-кошелёк или подарок Telegram.
     """
     kb = InlineKeyboardBuilder()
-    kb.button(text="🎁 Проверить подарок Telegram", callback_data=CB_CHECK_GIFT)
     kb.button(
-        text="🔗 Подключить TON-кошелёк",
+        text="🔑 Открыть верификацию",
         web_app=WebAppInfo(url=WEBAPP_URL),
     )
     kb.adjust(1)
@@ -27,16 +24,15 @@ def verification_menu() -> InlineKeyboardMarkup:
 
 
 def recheck_menu(has_wallet: bool) -> InlineKeyboardMarkup:
-    """Меню повторной проверки после неудачи или при наличии кошелька."""
+    """Меню после неудачи или при наличии подключённого кошелька."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🎁 Проверить подарок ещё раз", callback_data=CB_CHECK_GIFT)
     kb.button(
-        text="🔗 Подключить кошелёк (другой)",
+        text="🔄 Открыть верификацию заново",
         web_app=WebAppInfo(url=WEBAPP_URL),
     )
     if has_wallet:
-        kb.button(text="🔄 Перепроверить кошелёк", callback_data=CB_RECHECK)
-        kb.button(text="❌ Отвязать кошелёк", callback_data=CB_DISCONNECT_WALLET)
+        kb.button(text="🔁 Перепроверить кошелёк", callback_data=CB_RECHECK)
+        kb.button(text="❌ Отвязать кошелёк",      callback_data=CB_DISCONNECT_WALLET)
     kb.adjust(1)
     return kb.as_markup()
 

@@ -2,92 +2,191 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Scared Cats — TON Кошелёк</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Scared Cats — Верификация</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ============ Scared Cat dark/neon theme ============ */
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
     :root {
-      --bg:        var(--tg-theme-bg-color, #1c1c1e);
-      --text:      var(--tg-theme-text-color, #ffffff);
-      --hint:      var(--tg-theme-hint-color, #8e8e93);
-      --btn:       var(--tg-theme-button-color, #5288c1);
-      --btn-text:  var(--tg-theme-button-text-color, #ffffff);
-      --sec-bg:    var(--tg-theme-secondary-bg-color, #2c2c2e);
+      --bg-0:      #0a0a0a;          /* глубокий чёрный */
+      --bg-1:      #141414;          /* фон карточек */
+      --bg-2:      #1f1f1f;          /* поверхности */
+      --neon:      #39ff14;          /* неоновый зелёный (фирменный Scared Cat) */
+      --neon-soft: rgba(57,255,20,0.12);
+      --neon-mid:  rgba(57,255,20,0.40);
+      --text:      #e8ffe6;
+      --hint:      #6f7a6c;
+      --danger:    #ff453a;
+      --warn:      #ffb454;
     }
 
     html, body {
-      background: var(--bg);
+      background: radial-gradient(circle at 50% 0%, #0e1a0e 0%, var(--bg-0) 60%);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
       overscroll-behavior: none;
+      -webkit-font-smoothing: antialiased;
     }
 
     .page {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
       min-height: 100vh;
-      padding: 32px 24px;
+      padding: 32px 20px 40px;
     }
 
-    .logo { font-size: 72px; line-height: 1; margin-bottom: 16px; }
+    /* ===== HERO ===== */
+    .hero {
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .cat {
+      font-size: 84px;
+      line-height: 1;
+      filter: drop-shadow(0 0 24px var(--neon-mid));
+      animation: float 4s ease-in-out infinite;
+      margin-bottom: 8px;
+    }
+    @keyframes float {
+      0%,100% { transform: translateY(0) }
+      50%     { transform: translateY(-6px) }
+    }
 
     h1 {
-      font-size: 24px;
-      font-weight: 700;
-      margin-bottom: 8px;
-      text-align: center;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(180deg, #fff 0%, var(--neon) 120%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
     }
 
     .subtitle {
       font-size: 14px;
       color: var(--hint);
-      text-align: center;
       line-height: 1.5;
-      margin-bottom: 40px;
-      max-width: 280px;
     }
 
-    .btn {
+    /* ===== CARDS / BUTTONS ===== */
+    .actions {
       width: 100%;
-      max-width: 320px;
-      padding: 16px 20px;
-      border: none;
-      border-radius: 14px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--bg-1);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 18px;
+      padding: 18px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 10px;
-      transition: opacity 0.15s, transform 0.1s;
-      -webkit-tap-highlight-color: transparent;
-      background: var(--btn);
-      color: var(--btn-text);
+      gap: 14px;
+      cursor: pointer;
+      transition: all .18s ease;
+      position: relative;
+      overflow: hidden;
     }
-    .btn:active  { opacity: 0.75; transform: scale(0.98); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--neon-soft), transparent 60%);
+      opacity: 0;
+      transition: opacity .18s ease;
+      pointer-events: none;
+    }
+    .card:active {
+      transform: scale(0.98);
+      border-color: var(--neon-mid);
+    }
+    .card:active::before { opacity: 1; }
+    .card.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
 
+    .card-icon {
+      width: 52px; height: 52px;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-2);
+      border-radius: 14px;
+      font-size: 26px;
+      border: 1px solid rgba(57,255,20,0.15);
+    }
+    .card-body { flex: 1; min-width: 0; }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 3px;
+    }
+    .card-desc {
+      font-size: 12.5px;
+      color: var(--hint);
+      line-height: 1.4;
+    }
+    .card-arrow {
+      color: var(--neon);
+      font-size: 22px;
+      font-weight: 300;
+      flex-shrink: 0;
+    }
+
+    /* primary vs secondary */
+    .card.primary {
+      background: linear-gradient(140deg, #0f1f0f 0%, var(--bg-1) 70%);
+      border-color: rgba(57,255,20,0.30);
+      box-shadow: 0 0 24px rgba(57,255,20,0.08);
+    }
+
+    /* ===== STATUS ===== */
     .status {
       display: none;
       width: 100%;
-      max-width: 320px;
-      margin-top: 20px;
-      padding: 14px 18px;
-      border-radius: 12px;
+      max-width: 360px;
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-radius: 14px;
       font-size: 14px;
       line-height: 1.5;
       text-align: center;
+      border: 1px solid transparent;
     }
     .status.show { display: block; }
-    .status.info    { background: rgba(0,122,255,0.15);  color: #409cff; }
-    .status.success { background: rgba(52,199,89,0.15);  color: #34c759; }
-    .status.error   { background: rgba(255,59,48,0.15);  color: #ff453a; }
+    .status.info {
+      background: rgba(57,255,20,0.06);
+      border-color: rgba(57,255,20,0.25);
+      color: var(--neon);
+    }
+    .status.success {
+      background: rgba(57,255,20,0.10);
+      border-color: var(--neon);
+      color: var(--neon);
+      box-shadow: 0 0 22px rgba(57,255,20,0.18);
+    }
+    .status.error {
+      background: rgba(255,69,58,0.08);
+      border-color: rgba(255,69,58,0.4);
+      color: var(--danger);
+    }
+    .status.warn {
+      background: rgba(255,180,84,0.08);
+      border-color: rgba(255,180,84,0.4);
+      color: var(--warn);
+    }
 
     .spinner {
       display: inline-block;
@@ -96,62 +195,121 @@
       border-top-color: transparent;
       border-radius: 50%;
       animation: spin 0.7s linear infinite;
-      flex-shrink: 0;
-      vertical-align: middle;
+      vertical-align: -2px;
+      margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .hint-text {
-      margin-top: 16px;
-      font-size: 12px;
+    .footer {
+      margin-top: auto;
+      padding-top: 24px;
+      font-size: 11px;
       color: var(--hint);
       text-align: center;
-      max-width: 280px;
-      line-height: 1.5;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .footer .dot { color: var(--neon); }
+
+    code {
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 12px;
+      background: rgba(57,255,20,0.08);
+      padding: 1px 5px;
+      border-radius: 4px;
     }
   </style>
 </head>
 <body>
 <div class="page">
-  <div class="logo">😱🐱</div>
-  <h1>Scared Cats</h1>
-  <p class="subtitle">Подключи TON-кошелёк с NFT Scared Cats,<br>чтобы получить доступ к чату</p>
 
-  <button class="btn" id="wallet-btn">
-    🔗 Подключить TON-кошелёк
-  </button>
+  <div class="hero">
+    <div class="cat">🐈‍⬛</div>
+    <h1>SCARED CATS</h1>
+    <p class="subtitle">Подтверди, что ты владелец<br>NFT или подарка Scared Cat</p>
+  </div>
+
+  <div class="actions">
+    <div class="card primary" id="wallet-card">
+      <div class="card-icon">🔗</div>
+      <div class="card-body">
+        <div class="card-title">TON-кошелёк</div>
+        <div class="card-desc">Подключить через TON Connect и проверить NFT</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </div>
+
+    <div class="card" id="gift-card">
+      <div class="card-icon">🎁</div>
+      <div class="card-body">
+        <div class="card-title">Подарок Telegram</div>
+        <div class="card-desc">Проверить подарок Scared Cat в твоём профиле</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </div>
+  </div>
 
   <div class="status" id="status"></div>
 
-  <p class="hint-text" id="hint">
-    Поддерживаются Tonkeeper, MyTonWallet, Wallet и другие кошельки с TON Connect.
-  </p>
+  <div class="footer">
+    Powered by <span class="dot">●</span> TON Connect
+  </div>
 </div>
 
 <script type="module">
+  // ─── Telegram WebApp ───────────────────────────────────────────
   const tg = window.Telegram.WebApp;
   tg.ready();
   tg.expand();
+  tg.setHeaderColor('#0a0a0a');
+  tg.setBackgroundColor('#0a0a0a');
 
   const MANIFEST = 'https://mocapaket-blip.github.io/-Scared-Cat-Checker-Bot/tonconnect-manifest.json';
 
+  const $ = id => document.getElementById(id);
+
   function setStatus(msg, type = 'info') {
-    const el = document.getElementById('status');
+    const el = $('status');
     el.innerHTML = msg;
     el.className = 'status show ' + type;
   }
 
-  function setLoading(val) {
-    const btn = document.getElementById('wallet-btn');
-    btn.disabled = val;
-    if (val) {
-      btn.innerHTML = '<span class="spinner"></span>&nbsp; Подключаю…';
-    } else {
-      btn.innerHTML = '🔗 Подключить TON-кошелёк';
-    }
+  function setBusy(busy) {
+    $('wallet-card').classList.toggle('disabled', busy);
+    $('gift-card').classList.toggle('disabled', busy);
   }
 
-  // ── TON Connect init ────────────────────────────────────────────
+  function haptic(kind) {
+    try {
+      if (kind === 'success' || kind === 'error' || kind === 'warning')
+        tg.HapticFeedback.notificationOccurred(kind);
+      else
+        tg.HapticFeedback.impactOccurred(kind || 'medium');
+    } catch (e) { /* old TG client */ }
+  }
+
+  function shorten(addr) {
+    if (!addr || addr.length < 12) return addr;
+    return addr.slice(0, 6) + '…' + addr.slice(-4);
+  }
+
+  // ─── Gift check ────────────────────────────────────────────────
+  $('gift-card').addEventListener('click', () => {
+    haptic('medium');
+    setStatus('<span class="spinner"></span>Запрашиваю проверку подарков…', 'info');
+    setBusy(true);
+    setTimeout(() => {
+      try {
+        tg.sendData(JSON.stringify({ action: 'check_gift' }));
+        // Telegram автоматически закроет Mini App после sendData
+      } catch (e) {
+        setStatus('Ошибка: ' + e.message, 'error');
+        setBusy(false);
+      }
+    }, 250);
+  });
+
+  // ─── TON Connect ───────────────────────────────────────────────
   let tcUI = null;
   let prevWallet = null;
 
@@ -162,32 +320,26 @@
       );
 
       tcUI = new TonConnectUI({ manifestUrl: MANIFEST });
-
-      // Запоминаем текущее состояние (если уже подключён с прошлого раза)
       prevWallet = tcUI.wallet;
 
       if (prevWallet) {
-        // Кошелёк уже подключён — показываем адрес
-        const short = shortenAddress(prevWallet.account.address);
-        setStatus(`Кошелёк уже подключён:<br><code>${short}</code><br>Нажми кнопку для повторной проверки.`, 'info');
-        const btn = document.getElementById('wallet-btn');
-        btn.innerHTML = '🔄 Перепроверить кошелёк';
+        const short = shorten(prevWallet.account.address);
+        setStatus(`Кошелёк подключён: <code>${short}</code><br>Нажми «TON-кошелёк» для перепроверки.`, 'info');
       }
 
-      // Слушаем новые подключения
       tcUI.onStatusChange(wallet => {
         if (wallet && !prevWallet) {
-          // Новое подключение
+          // Новое подключение — отправляем данные боту
+          haptic('success');
           const address = wallet.account.address;
-          tg.HapticFeedback.notificationOccurred('success');
-          setStatus('✅ Кошелёк подключён! Отправляю боту для проверки NFT…', 'success');
-          document.getElementById('hint').style.display = 'none';
+          setStatus(`✅ Кошелёк подключён: <code>${shorten(address)}</code><br>Проверяю NFT…`, 'success');
+          setBusy(true);
           setTimeout(() => {
             try {
               tg.sendData(JSON.stringify({ action: 'wallet', address }));
             } catch (e) {
-              setStatus('Ошибка отправки данных: ' + e.message, 'error');
-              setLoading(false);
+              setStatus('Ошибка отправки: ' + e.message, 'error');
+              setBusy(false);
             }
           }, 600);
         }
@@ -196,60 +348,49 @@
 
     } catch (e) {
       console.error('TonConnect init error:', e);
-      setStatus('Ошибка загрузки TON Connect. Попробуй обновить страницу.', 'error');
+      setStatus('Не удалось загрузить TON Connect. Обнови страницу.', 'error');
     }
-  }
-
-  function shortenAddress(addr) {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
 
   initTonConnect();
 
-  // ── Wallet button click ─────────────────────────────────────────
-  document.getElementById('wallet-btn').addEventListener('click', async () => {
-    tg.HapticFeedback.impactOccurred('medium');
+  $('wallet-card').addEventListener('click', async () => {
+    haptic('medium');
 
     if (!tcUI) {
-      setStatus('<span class="spinner"></span>&nbsp; TON Connect ещё загружается…', 'info');
+      setStatus('<span class="spinner"></span>TON Connect ещё загружается…', 'info');
       return;
     }
 
-    // Если кошелёк уже подключён — сразу отправляем данные боту
+    // Уже подключён — сразу шлём боту для перепроверки
     if (tcUI.wallet) {
       const address = tcUI.wallet.account.address;
-      setStatus('<span class="spinner"></span>&nbsp; Проверяю NFT…', 'info');
-      setLoading(true);
+      setStatus('<span class="spinner"></span>Проверяю NFT…', 'info');
+      setBusy(true);
       setTimeout(() => {
-        try {
-          tg.sendData(JSON.stringify({ action: 'wallet', address }));
-        } catch (e) {
-          setStatus('Ошибка: ' + e.message, 'error');
-          setLoading(false);
-        }
-      }, 300);
+        tg.sendData(JSON.stringify({ action: 'wallet', address }));
+      }, 250);
       return;
     }
 
-    // Открываем модал выбора кошелька
-    setLoading(true);
+    // Открываем модал TON Connect
+    setStatus('<span class="spinner"></span>Открываю список кошельков…', 'info');
+    setBusy(true);
     try {
       await tcUI.openModal();
-      // Дальше onStatusChange поймает подключение
     } catch (e) {
       setStatus('Не удалось открыть TON Connect: ' + e.message, 'error');
-      setLoading(false);
+      setBusy(false);
     }
 
-    // Кнопка разблокируется после закрытия модала без подключения
-    tcUI.onModalStateChange(state => {
-      if (!state.status || state.status === 'closed') {
-        if (!tcUI.wallet) {
-          setLoading(false);
+    if (typeof tcUI.onModalStateChange === 'function') {
+      tcUI.onModalStateChange(state => {
+        if ((!state.status || state.status === 'closed') && !tcUI.wallet) {
+          setBusy(false);
+          setStatus('Подключение отменено.', 'warn');
         }
-      }
-    });
+      });
+    }
   });
 </script>
 </body>
